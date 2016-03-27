@@ -1,6 +1,7 @@
 package net.md_5.bungee;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
@@ -10,6 +11,9 @@ import com.google.gson.GsonBuilder;
 import net.md_5.bungee.api.Favicon;
 import net.md_5.bungee.api.ServerPing;
 import net.md_5.bungee.api.Title;
+import net.md_5.bungee.api.chat.TranslatableComponent;
+import net.md_5.bungee.chat.TextComponentSerializer;
+import net.md_5.bungee.chat.TranslatableComponentSerializer;
 import net.md_5.bungee.module.ModuleManager;
 import com.google.common.io.ByteStreams;
 import net.md_5.bungee.api.chat.BaseComponent;
@@ -30,6 +34,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.util.ResourceLeakDetector;
 import net.md_5.bungee.conf.Configuration;
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
@@ -42,6 +47,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
+import java.util.PropertyResourceBundle;
 import java.util.ResourceBundle;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -100,7 +106,8 @@ public class BungeeCord extends ProxyServer
     /**
      * Localization bundle.
      */
-    public ResourceBundle bundle;
+    private ResourceBundle baseBundle;
+    private ResourceBundle customBundle;
     public EventLoopGroup eventLoops;
     /**
      * locations.yml save thread.
@@ -139,10 +146,10 @@ public class BungeeCord extends ProxyServer
     @Getter
     private final Logger logger;
     public final Gson gson = new GsonBuilder()
-            .registerTypeAdapter( ServerPing.PlayerInfo.class, new PlayerInfoSerializer( ProtocolConstants.MINECRAFT_1_7_6 ) )
-            .registerTypeAdapter( Favicon.class, Favicon.getFaviconTypeAdapter() ).create();
-    public final Gson gsonLegacy = new GsonBuilder()
-            .registerTypeAdapter( ServerPing.PlayerInfo.class, new PlayerInfoSerializer( ProtocolConstants.MINECRAFT_1_7_2 ) )
+            .registerTypeAdapter( BaseComponent.class, new ComponentSerializer() )
+            .registerTypeAdapter( TextComponent.class, new TextComponentSerializer() )
+            .registerTypeAdapter( TranslatableComponent.class, new TranslatableComponentSerializer() )
+            .registerTypeAdapter( ServerPing.PlayerInfo.class, new PlayerInfoSerializer() )
             .registerTypeAdapter( Favicon.class, Favicon.getFaviconTypeAdapter() ).create();
     @Getter
     private ConnectionThrottle connectionThrottle;
@@ -175,10 +182,18 @@ public class BungeeCord extends ProxyServer
 
         try
         {
-            bundle = ResourceBundle.getBundle( "messages" );
+            baseBundle = ResourceBundle.getBundle( "messages" );
         } catch ( MissingResourceException ex )
         {
-            bundle = ResourceBundle.getBundle( "messages", Locale.ENGLISH );
+            baseBundle = ResourceBundle.getBundle( "messages", Locale.ENGLISH );
+        }
+        File file = new File( "messages.properties" );
+        if ( file.isFile() )
+        {
+            try ( FileReader rd = new FileReader( file ) )
+            {
+                customBundle = new PropertyResourceBundle( rd );
+            }
         }
 
         // This is a workaround for quite possibly the weirdest bug I have ever encountered in my life!
@@ -458,7 +473,7 @@ public class BungeeCord extends ProxyServer
         String translation = "<translation '" + name + "' missing>";
         try
         {
-            translation = MessageFormat.format( bundle.getString( name ), args );
+            translation = MessageFormat.format( customBundle != null && customBundle.containsKey( name ) ? customBundle.getString( name ) : baseBundle.getString( name ), args );
         } catch ( MissingResourceException ex )
         {
         }
@@ -578,7 +593,7 @@ public class BungeeCord extends ProxyServer
     @Override
     public String getGameVersion()
     {
-        return "1.8";
+        return Joiner.on( ", " ).join( ProtocolConstants.SUPPORTED_VERSIONS );
     }
 
     @Override
